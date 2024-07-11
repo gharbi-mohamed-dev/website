@@ -1,6 +1,7 @@
 import {
   Data,
   Effect,
+  Fiber,
   GlobalValue,
   Layer,
   Option,
@@ -186,7 +187,7 @@ const make = Effect.gen(function* () {
         container.fs.writeFile(path(".npmrc"), npmRc)
       )
 
-      yield* Effect.forEach(
+      const snapshotsFiber = yield* Effect.forEach(
         workspace.snapshots,
         (snapshot) =>
           HttpClientRequest.get(
@@ -204,7 +205,7 @@ const make = Effect.gen(function* () {
             Effect.ignore
           ),
         { concurrency: workspace.snapshots.length, discard: true }
-      )
+      ).pipe(Effect.forkScoped)
 
       yield* Effect.promise(() =>
         container.mount(treeFromWorkspace(workspace), {
@@ -381,7 +382,8 @@ const make = Effect.gen(function* () {
         watch: watchFile,
         fsEvents: Stream.fromPubSub(fsEvents),
         run: runWorkspace,
-        shell
+        shell,
+        awaitSnapshots: Fiber.join(snapshotsFiber)
       })
 
       activeWorkspaces.add(handle)
@@ -462,6 +464,7 @@ export interface WorkspaceHandle {
   readonly fsEvents: Stream.Stream<FileSystemEvent>
   readonly shell: Effect.Effect<WebContainerProcess, never, Scope.Scope>
   readonly run: (command: string) => Effect.Effect<number>
+  readonly awaitSnapshots: Effect.Effect<void>
 }
 
 export interface WorkspacePlugin {
